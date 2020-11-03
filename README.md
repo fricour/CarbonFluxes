@@ -8,3 +8,7 @@
 	- git add *FILE*
 	- git commit -m "insert any message you'd like that explains what you did", e.g. git commit -m 'add QC controls'
 	- git push
+	
+- What this page is about?
+
+Using the method of Dall'Olmo et al., 2014, we will try to estimate carbon fluxes based on BBP data from BGC-ARGO floats. We will start in the Atlantic first then ...
