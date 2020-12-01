@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[382]:
+# In[1319]:
 
 
 import numpy as np
@@ -14,7 +14,7 @@ import gsw # this will be VERY useful https://github.com/TEOS-10/GSW-Python
 
 # # 1. Download synthetic argo file (= S-file)
 
-# In[383]:
+# In[1320]:
 
 
 # import requests
@@ -48,7 +48,7 @@ def download_float(dac, wmo):
         print("File already exists, moving on.")
 
 
-# In[384]:
+# In[1321]:
 
 
 download_float('coriolis',6900798)
@@ -58,13 +58,14 @@ download_float('coriolis',6900799)
 
 # # 2. Extract data from NetCDF
 
-# In[385]:
+# In[1322]:
 
 
 # Read data
 
-def read_data(ncfile):
+def read_data(wmo):
     
+    ncfile = str(wmo)+'_Sprof.nc'
     # see also the doc for SYNTHETIC BGC-ARGO files: https://archimer.ifremer.fr/doc/00445/55637/75359.pdf
     nc = netCDF4.Dataset(os.getcwd()+'/floats/'+ncfile, mode='r') # add a get url download the file in a folder then read it
     # get coordinates variables
@@ -105,6 +106,9 @@ def read_data(ncfile):
     data['lat'] = lat
     data['lon'] = lon
 
+    # add WMO
+    data['wmo'] = wmo
+    
     # add profile IDs in a similar way, assuming the hypothesis of constant length per profile is correct (thanks to S profiles?)
     ids = np.array(range(1,n_prof+1))
     data['id'] = np.repeat(ids, points_per_profile)
@@ -116,15 +120,24 @@ def read_data(ncfile):
     return(data)
 
 
-# In[386]:
+# In[1323]:
+
+
+# choose the float
+wmo = 6900798
+wmo = 6900799
+
+
+# In[1324]:
 
 
 #data = read_data('6901866_Sprof.nc')
-data = read_data('6900798_Sprof.nc') # here you choose which float you'll analyze.
+#data = read_data(str(wmo)+'_Sprof.nc') # here you choose which float you'll analyze.
 #data = read_data('6900799_Sprof.nc')
+data = read_data(wmo)
 
 
-# In[387]:
+# In[1325]:
 
 
 data
@@ -134,7 +147,7 @@ data
 # - convert QC bytes into integers
 # - remove depth where we don't have BBP data ==> this needs to be validated and check the order with the additional QCs to be applied
 
-# In[388]:
+# In[1326]:
 
 
 # convert QC bytes into integers
@@ -146,7 +159,7 @@ def bytes_to_int(x):
     return(x)
 
 
-# In[389]:
+# In[1327]:
 
 
 # apply that function where it is needed
@@ -157,7 +170,7 @@ data['chla_qc'] = data['chla_qc'].apply(bytes_to_int)
 data['bbp_qc'] = data['bbp_qc'].apply(bytes_to_int)
 
 
-# In[390]:
+# In[1328]:
 
 
 # remove negative NaN depth and negative depths
@@ -167,15 +180,15 @@ data = data[data.depth != 'NaN']
 data = data[data.depth >= 0]
 
 
-# In[391]:
+# In[1329]:
 
 
 data
 
 
-# # 4. Quality controls (to be done) => couldn't find any tests in Dall'Olmo 2012
+# # 4. Quality controls (Giorgio didn't use any ? -> yes)
 
-# In[392]:
+# In[1330]:
 
 
 # to be done : apply some additionnal QC on BBP data
@@ -195,7 +208,7 @@ data['chla_qc'].replace(3, 'NaN', inplace=True)
 data['chla_qc'].replace(4, 'NaN', inplace=True)
 
 
-# In[393]:
+# In[1331]:
 
 
 data = data[data.temp_qc != 'NaN']
@@ -207,7 +220,7 @@ data
 
 # # 5. Compute density
 
-# In[394]:
+# In[1332]:
 
 
 # compute density
@@ -226,7 +239,7 @@ data['sigma'] = sigma
 # 
 # - /!\ some issues are still present with MLD computation .. check ID = 20 for e.g. => better check for a diff of 0.03 in both directions .. looks like they are density inversions at some point.. => well maybe not actually: see http://bora.uib.no/bitstream/handle/1956/1722/paper_mld_BORA.pdf?sequence=1&isAllowed=y and https://www.researchgate.net/figure/Month-of-maximum-MLD-reached-in-the-North-Atlantic-for-a-the-DT-02C-climatology_fig3_229010378
 
-# In[395]:
+# In[1333]:
 
 
 # mmmh need to adress two issues, the presence of NaN and when we don't have enough data before 10?
@@ -260,13 +273,13 @@ data = data.groupby('id').apply(compute_MLD)
 data = data[data.MLD != 'NaN']
 
 
-# In[396]:
+# In[1334]:
 
 
 np.unique(data['MLD'])
 
 
-# In[397]:
+# In[1335]:
 
 
 # check MLD range
@@ -276,26 +289,16 @@ print(np.max(np.unique(data['MLD'])))
 
 # # Now that the MLD has been computed, we can remove data where bbp is NaN (core-argo vs b-argo)
 
-# In[398]:
+# In[1336]:
 
 
-# remove depth where we don't have BBP data
-# NOTE : is that correct? If not, we may have troubles with the median filter. OR we can let NaN be present in
-# BBP data but then write a median filter that does not take them into account? Which is probably the case? 
-# To check with Giorgio
+# remove depth where we don't have BBP data or where we have BAD bbp data
+data = data[data.bbp_qc != 'NaN'] # will be applied AFTER the computation of the MLD
 data = data[data.bbp != 'NaN']
 data
 
 
-# # 6. Some plots
-
-# In[399]:
-
-
-data.plot.scatter(x = 'bbp', y = 'depth')
-
-
-# In[400]:
+# In[1337]:
 
 
 # # plot some data
@@ -307,69 +310,66 @@ data.plot.scatter(x = 'bbp', y = 'depth')
 # ==> for an unknown reason, plotnine does not behave like it used to..
 
 
-# # 7. Remove dark offset  ==> remark maybe it's just ONE value per float and not per profile
+# # 7. Remove dark offset  (one per float)
 
-# In[401]:
+# In[1338]:
 
 
 def remove_dark_offset(group):
     min_bbp = np.nanmin(group['bbp'])
+    print(min_bbp)
     group['bbp'] = group['bbp'] - min_bbp
     return(group)
 
-
-# In[402]:
-
-
-data = data.groupby('id').apply(remove_dark_offset)
+#data = data.groupby('id').apply(remove_dark_offset) # for each profile
+data = data.groupby('wmo').apply(remove_dark_offset) # for each float (hence here, for all profiles)
 
 
 # # 8. Apply median filter on BBP data
 
-# In[403]:
+# In[1339]:
+
+
+# convert bbp with log (to check something)
+z = np.array(data['bbp'])
+z = np.log10(z.astype(np.float64))
+data['bbp'] = z # OK we we apply a filter on the LOG bbp (otherwise the filter just is not working => ASK WHY)
+
+
+# In[1340]:
 
 
 # median filter on BBP data ==> this needs to be done for EACH profile individually
 from scipy import signal
 
-# def medfilt (x, k):
-#     """Apply a length-k median filter to a 1D array x.
-#     Boundaries are extended by repeating endpoints.
-#     """
-#     assert k % 2 == 1, "Median filter length must be odd."
-#     assert x.ndim == 1, "Input must be one-dimensional."
-#     k2 = (k - 1) // 2
-#     y = np.zeros ((len (x), k), dtype=x.dtype)
-#     y[:,k2] = x
-#     for i in range (k2):
-#         j = k2 - i
-#         y[j:,i] = x[:-j]
-#         y[:j,i] = x[0]
-#         y[:-j,-(i+1)] = x[j:]
-#         y[-j:,-(i+1)] = x[-1]
-#     return np.median (y, axis=1)
-
-# def medianfilter(group):
-#     smoothed = signal.medfilt(group['bbp'],5) # kernel size = 5
-#     return(pd.Series(smoothed)) # apply on dataframe MUST return a dataframe, a series or a scaler, not a numpy array
-
-# # not a pretty code but it works ..
-# # grouped['bbp'].apply(lambda x: signal.medfilt(x, kernel_size = 5))
-# tmp = data.groupby('id').apply(medianfilter)
-# tmp = tmp.reset_index()
-# data['bbp'] = np.array(tmp[0])
-
 def medianfilter(group):
-    smoothed = signal.medfilt(group['bbp'],5) # kernel size = 5
+    smoothed = signal.medfilt(group['bbp'],11) # kernel size = 5 ==> 11 (see email of Giorgio)
     group['bbp'] = smoothed
     return(group)
 
-tmp = data.groupby('id').apply(medianfilter)
+# test = data.copy() # to check filtering if needed
+data = data.groupby('id').apply(medianfilter)
+
+
+# In[1341]:
+
+
+# i = 300
+# data[(data.id == i) & (data.depth <100)].plot(x = 'bbp', y ='depth', kind = 'line')
+# test[(data.id == i) & (test.depth <100)].plot(x = 'bbp', y ='depth', kind = 'line')
+
+
+# In[1342]:
+
+
+# put in back in "normal" bbp data
+from scipy.special import exp10
+data['bbp'] = exp10(data['bbp'])
 
 
 # # 9. Convert BBP to POC
 
-# In[404]:
+# In[1343]:
 
 
 # some criteria (NB: empirical factors)
@@ -388,13 +388,13 @@ def BBP_to_POC(group):
     return(group)
 
 
-# In[405]:
+# In[1344]:
 
 
 data = data.groupby('id').apply(BBP_to_POC)
 
 
-# In[406]:
+# In[1345]:
 
 
 data
@@ -402,7 +402,7 @@ data
 
 # # 10. Convert julian time to human time
 
-# In[407]:
+# In[1346]:
 
 
 import datetime
@@ -424,7 +424,7 @@ data = data.groupby('id').apply(julian_to_human)
 
 # ### A) Based on Chla relative values
 
-# In[408]:
+# In[1347]:
 
 
 # then in that case, we must also apply a median filter on chla data
@@ -436,7 +436,7 @@ def medianfilter_chla(group):
 data = data.groupby('id').apply(medianfilter_chla)
 
 
-# In[409]:
+# In[1348]:
 
 
 # Let's start with the shape of the Chla profile
@@ -450,7 +450,7 @@ plt.gca().invert_yaxis()
 plt.plot(tmp['chla'], tmp['depth'])
 
 
-# In[410]:
+# In[1349]:
 
 
 # based on some profiles, I decided to put the threshold of Chla at 0.1 mg/m³ (pay attention to the units in Morel et al., 2001)
@@ -460,7 +460,7 @@ chla_threshold = 0.1
 ## NOTE : not sure it's the good way to go
 
 
-# In[411]:
+# In[1350]:
 
 
 z_eu_chla_threshold = min(tmp[tmp.chla < chla_threshold].depth)
@@ -469,7 +469,7 @@ z_eu_chla_threshold
 
 # ### B) Based on empirical relationship
 
-# In[412]:
+# In[1351]:
 
 
 chla_10m = float(tmp.iloc[(tmp['depth']-10).abs().argsort()[:1]]['chla']) # chla at ~ 10 m (or the closest)
@@ -481,7 +481,7 @@ z_eu_empir
 
 # # Which method is the best to compute a z_eu ? Needs to be discussed
 
-# In[413]:
+# In[1352]:
 
 
 # compute the z_eu for each profile, I'm choosing the satellite method (empirical)
@@ -492,13 +492,13 @@ def compute_z_eu(group):
     return(group)
 
 
-# In[414]:
+# In[1353]:
 
 
 data = data.groupby('id').apply(compute_z_eu)
 
 
-# In[415]:
+# In[1354]:
 
 
 data
@@ -506,7 +506,7 @@ data
 
 # ## Thickness of the layer where particles can potentially be produced by photosynthesis
 
-# In[416]:
+# In[1355]:
 
 
 # I am gonna keep the empirical z_eu
@@ -516,13 +516,13 @@ def compute_zp(group):
     return(group)
 
 
-# In[417]:
+# In[1356]:
 
 
 data = data.groupby('id').apply(compute_zp)
 
 
-# In[418]:
+# In[1357]:
 
 
 # np.unique(data[data.MLD > 200]['human_time'])
@@ -534,14 +534,14 @@ data = data.groupby('id').apply(compute_zp)
 
 # # Integration of POC in different layers
 
-# In[419]:
+# In[1358]:
 
 
 tmp = data[data.id == 20]
 tmp
 
 
-# In[420]:
+# In[1359]:
 
 
 # https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.simps.html
@@ -554,7 +554,7 @@ from scipy import integrate
 integrate.simps(y,x)
 
 
-# In[421]:
+# In[1360]:
 
 
 def integrate_poc(depth_min, depth_max, data):
@@ -564,7 +564,7 @@ def integrate_poc(depth_min, depth_max, data):
     return(integrate.simps(y,x))
 
 
-# In[422]:
+# In[1361]:
 
 
 def compute_carbon_stocks(group):
@@ -623,27 +623,27 @@ def compute_carbon_stocks(group):
     return(group)
 
 
-# In[423]:
+# In[1362]:
 
 
 #import ipdb; ipdb.set_trace() # debugging starts here
 
 
-# In[424]:
+# In[1363]:
 
 
 data = data.groupby('id').apply(compute_carbon_stocks)
 data
 
 
-# In[425]:
+# In[1364]:
 
 
 # check stock max 
 max(data['iPOC_0_1000'])
 
 
-# In[426]:
+# In[1365]:
 
 
 # let's just plot full stock (0-1000) over time to see if the trends are consistent with the paper
@@ -651,7 +651,7 @@ test = data[['human_time', 'iPOC_0_1000']].drop_duplicates()
 test
 
 
-# In[427]:
+# In[1366]:
 
 
 # attention, total stock has been SMOOTHED so the pic was surely erased in Fig. 3
@@ -660,7 +660,7 @@ test.plot()
 
 # # Let's (try to) replicate Fig. 2
 
-# In[428]:
+# In[1367]:
 
 
 from pylab import *
@@ -674,7 +674,7 @@ import cmocean
 import matplotlib.dates as mdates
 
 
-# In[429]:
+# In[1368]:
 
 
 # data to plot
@@ -690,7 +690,7 @@ z = np.log10(z.astype(np.float64))
 # np.log10(list(z)) # also work but np.log10(z) does NOT work
 
 
-# In[430]:
+# In[1369]:
 
 
 # cmap = cmocean.cm.tempo_r
@@ -762,15 +762,23 @@ axes(cb1.ax)
 axes(imaxes)
 
 
+# In[1370]:
+
+
+fname = 'figs/Fig2_'+str(wmo)    
+fig.set_size_inches(20, 6)
+fig.savefig(fname, dpi = 75)
+
+
 # # What about Fig. 3?
 
-# In[431]:
+# In[1371]:
 
 
 data.columns
 
 
-# In[432]:
+# In[1372]:
 
 
 data2 = data[['human_time', 'iPOC_0_1000', 'iPOC_0_zp','iPOC_zp_1000','iPOC_zp+zi50_1000',
@@ -779,7 +787,7 @@ data2 = data[['human_time', 'iPOC_0_1000', 'iPOC_0_zp','iPOC_zp_1000','iPOC_zp+z
 data2
 
 
-# In[433]:
+# In[1373]:
 
 
 # remove NaN otherwise matplotlib will not work. It should only concerns stocks that are NaN which is the same as 0
@@ -801,13 +809,13 @@ mld = np.array(data2['MLD'])
 time_mld = np.array(data2['human_time'])
 
 
-# In[434]:
+# In[1374]:
 
 
 # sns.palplot(sns.light_palette("grey", reverse=True))
 
 
-# In[435]:
+# In[1375]:
 
 
 import seaborn as sns
@@ -815,7 +823,7 @@ pal = sns.light_palette("grey", reverse=True)
 pal = sns.dark_palette("green", reverse=True)
 
 
-# In[436]:
+# In[1376]:
 
 
 fig, ax = plt.subplots(figsize = (20,6))
@@ -838,13 +846,26 @@ ax.bar(x, iPOC_zpzi300_1000, width = w, color = pal[1])
 ax.bar(x, iPOC_zpzi400_1000, width = w, color = pal[0])
 
 # iPOC in the upper layer
-ax.plot(x, iPOC_0_zp, color = 'red')
+iPOC_0_zp_s = gaussian_filter1d(iPOC_0_zp, 1) # smoothed
+ax.plot(x, iPOC_0_zp_s, color = 'red', lw = 2)
+ax.bar(x, iPOC_0_zp, width = w, color = "None", edgecolor = 'red')
 
 ax.set_ylabel('iPOC [g POC m$^{-2}$]', fontsize = 20)
 
+# iPOC zp -> 1000
+iPOC_zp_1000_s = gaussian_filter1d(iPOC_zp_1000, 1) # smoothed
+ax.plot(x, iPOC_zp_1000_s, color = 'black', lw = 2)
+
 # add (not smoothed) iPOC_0_1000
 # Shade the area between y1 and line y=0
-ax.fill_between(x, y1 = iPOC_0_1000, facecolor="yellow", alpha=.5) # The outline color
+
+# try to smooth iPOC_0_1000
+from scipy.signal import savgol_filter
+# iPOC_0_1000_s = savgol_filter(iPOC_0_1000, 15, 3)
+# iPOC_0_1000_s = signal.medfilt(iPOC_0_1000, 11)
+from scipy.ndimage import gaussian_filter1d
+iPOC_0_1000_s = gaussian_filter1d(iPOC_0_1000, 1)
+ax.fill_between(x, y1 = iPOC_0_1000_s, facecolor="yellow", alpha=.5) # The outline color
 
 # import seaborn as sns
 # seq_col_brew = sns.color_palette("gray", 5)
@@ -881,16 +902,14 @@ ax2.plot(time_mld, mld, 'b--', lw = 2)
 ax2.set_ylabel('MLD [m]', fontsize = 20)
 plt.gca().invert_yaxis()
 
-
-# In[437]:
-
-
-data2.head(5)
+fname = 'figs/Fig3up_'+str(wmo)    
+fig.set_size_inches(20, 6)
+fig.savefig(fname, dpi = 75)
 
 
 # # Compute instantaneous fluxes (reminder : hyp that flux is 0 at 1000 m)
 
-# In[438]:
+# In[1377]:
 
 
 def compute_flux(dataset, var_name):
@@ -903,42 +922,95 @@ def compute_flux(dataset, var_name):
             deltaIPOC = dataset.iloc[i].loc[var_name] - dataset.iloc[i-1].loc[var_name]
             deltaT = relativedelta(dataset.iloc[i].loc['human_time'], dataset.iloc[i-1].loc['human_time'])
             deltaT = deltaT.days
-            flux = (deltaIPOC/deltaT)*100 # *100 to get mg instead of g
+            flux = (deltaIPOC/deltaT)*1000 # *100 to get mg instead of g
             fluxes.append(flux)
     return(fluxes)
 
 
-# In[439]:
+# In[1378]:
 
 
-data2['flux_zpzi50_1000'] = compute_flux(data2, 'iPOC_zp+zi50_1000')
-data2['flux_zpzi100_1000'] = compute_flux(data2, 'iPOC_zp+zi100_1000')
-data2['flux_zpzi200_1000'] = compute_flux(data2, 'iPOC_zp+zi200_1000')
-data2['flux_zpzi300_1000'] = compute_flux(data2, 'iPOC_zp+zi300_1000')
-data2['flux_zpzi400_1000'] = compute_flux(data2, 'iPOC_zp+zi400_1000')
-data2['flux_0_zp'] = compute_flux(data2, 'iPOC_0_zp')
+data3 = data2.copy()
+tmp = gaussian_filter1d(data3['iPOC_0_zp'], 1) # smoothed
+data3['iPOC_0_zp'] = tmp
+data3['flux_0_zp'] = compute_flux(data3, 'iPOC_0_zp')
+
+# other
+tmp = gaussian_filter1d(data2['iPOC_zp+zi50_1000'],1)
+data3['iPOC_zp+zi50_1000'] = tmp
+data3['flux_zpzi50_1000'] = compute_flux(data3, 'iPOC_zp+zi50_1000')
+
+# other
+tmp = gaussian_filter1d(data2['iPOC_zp+zi100_1000'],1)
+data3['iPOC_zp+zi100_1000'] = tmp
+data3['flux_zpzi100_1000'] = compute_flux(data3, 'iPOC_zp+zi100_1000')
+
+# other
+tmp = gaussian_filter1d(data2['iPOC_zp+zi200_1000'],1)
+data3['iPOC_zp+zi200_1000'] = tmp
+data3['flux_zpzi200_1000'] = compute_flux(data3, 'iPOC_zp+zi200_1000')
+
+# other
+tmp = gaussian_filter1d(data2['iPOC_zp+zi300_1000'],1)
+data3['iPOC_zp+zi300_1000'] = tmp
+data3['flux_zpzi300_1000'] = compute_flux(data3, 'iPOC_zp+zi300_1000')
+
+tmp = gaussian_filter1d(data2['iPOC_zp+zi400_1000'],1)
+data3['iPOC_zp+zi400_1000'] = tmp
+data3['flux_zpzi400_1000'] = compute_flux(data3, 'iPOC_zp+zi400_1000')
 
 
-# In[440]:
+# In[1379]:
 
 
-data2.head()
+fig, ax = plt.subplots(figsize = (20,6))
+ax2 = ax.twinx()
+ax.plot(x, iPOC_0_zp, color = 'red')
 
 
-# In[441]:
+# In[1380]:
+
+
+# # apply smoothing filter on the time series of stocks before computing the derivatives
+# data2['iPOC_zp+zi50_1000'] = gaussian_filter1d(data2['iPOC_zp+zi50_1000'],1)
+# data2['iPOC_zp+zi100_1000'] = gaussian_filter1d(data2['iPOC_zp+zi100_1000'],1)
+# data2['iPOC_zp+zi200_1000'] = gaussian_filter1d(data2['iPOC_zp+zi200_1000'],1)
+# data2['iPOC_zp+zi300_1000'] = gaussian_filter1d(data2['iPOC_zp+zi300_1000'],1)
+# data2['iPOC_zp+zi400_1000'] = gaussian_filter1d(data2['iPOC_zp+zi400_1000'],1)
+# data2['iPOC_0_zp'] = gaussian_filter1d(data2['iPOC_0_zp'],1)
+
+
+# In[1381]:
+
+
+# data2['flux_zpzi50_1000'] = compute_flux(data2, 'iPOC_zp+zi50_1000')
+# data2['flux_zpzi100_1000'] = compute_flux(data2, 'iPOC_zp+zi100_1000')
+# data2['flux_zpzi200_1000'] = compute_flux(data2, 'iPOC_zp+zi200_1000')
+# data2['flux_zpzi300_1000'] = compute_flux(data2, 'iPOC_zp+zi300_1000')
+# data2['flux_zpzi400_1000'] = compute_flux(data2, 'iPOC_zp+zi400_1000')
+# data2['flux_0_zp'] = compute_flux(data2, 'iPOC_0_zp')
+
+
+# In[1382]:
+
+
+# data2.head()
+
+
+# In[1383]:
 
 
 # data to plot
 x = np.array(data2['human_time'])
-flux_zpzi50_1000 = np.array(data2['flux_zpzi50_1000'])
-flux_zpzi100_1000 = np.array(data2['flux_zpzi100_1000'])
-flux_zpzi200_1000 = np.array(data2['flux_zpzi200_1000'])
-flux_zpzi300_1000 = np.array(data2['flux_zpzi300_1000'])
-flux_zpzi400_1000 = np.array(data2['flux_zpzi400_1000'])
-flux_0_zp = np.array(data2['flux_0_zp'])
+flux_zpzi50_1000 = np.array(data3['flux_zpzi50_1000'])
+flux_zpzi100_1000 = np.array(data3['flux_zpzi100_1000'])
+flux_zpzi200_1000 = np.array(data3['flux_zpzi200_1000'])
+flux_zpzi300_1000 = np.array(data3['flux_zpzi300_1000'])
+flux_zpzi400_1000 = np.array(data3['flux_zpzi400_1000'])
+flux_0_zp = np.array(data3['flux_0_zp'])
 
 
-# In[442]:
+# In[1384]:
 
 
 fig, ax = plt.subplots(figsize = (20,6))
@@ -950,6 +1022,7 @@ ax.plot(x, flux_zpzi200_1000, color = pal[2])
 ax.plot(x, flux_zpzi300_1000, color = pal[1])
 ax.plot(x, flux_zpzi400_1000, color = pal[0])
 ax.plot(x, flux_0_zp, color = 'red')
+#iPOC_0_zp_test
 ax.set_ylabel('E$_{zi}$ [mg POC m$^{-2}$]', fontsize = 20)
 
 #####   set ticks and  labels
@@ -979,9 +1052,15 @@ ax2.plot(time_mld, mld, 'b--', lw = 2)
 ax2.set_ylabel('MLD [m]', fontsize = 20)
 plt.gca().invert_yaxis()
 
+# add horizontal line
+ax.axhline(y = 0, color = 'black')
+
+fname = 'figs/Fig3down_'+str(wmo)    
+fig.set_size_inches(20, 6)
+fig.savefig(fname, dpi = 75)
+
 
 # # TO DO
-# (- 1. QC the data (with the QC of 2012 first (see Dall'Olmo) but then check w/ Raphaelle Sauzede (couldn't find test in Dall'Olmo 2012))
 # - 1. compute the depth of the bottom of the euphotic zone (3 différents ways possible but two to really compare) => needs to be discussed and tested with the method of Lionel for the determination of z_eu
 # - 2. finalize the check for no POC at 1000m
 
